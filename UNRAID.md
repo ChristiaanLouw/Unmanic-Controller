@@ -20,6 +20,12 @@ docker compose pull
 docker compose up -d
 ```
 
+If Unraid does not show the WebUI menu or icon after an update, recreate the container from the compose file so Unraid picks up the updated labels:
+
+```sh
+docker compose up -d --force-recreate
+```
+
 Open the web UI on:
 
 ```text

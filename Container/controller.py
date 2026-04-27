@@ -260,6 +260,10 @@ def logout():
     session.clear()
     return jsonify({"success": True})
 
+@app.route("/api/session")
+def api_session():
+    return jsonify({"authenticated": bool(session.get("auth"))})
+
 @app.route("/api/workers")
 def api_workers():
     if require_auth():

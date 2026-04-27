@@ -13,3 +13,7 @@ services:
       WEB_PORT: ${WEB_PORT:-8080}
       WEBHOOK_PORT: ${WEBHOOK_PORT:-9777}
       SECRET_KEY: ${SECRET_KEY:-change-me}
+    labels:
+      net.unraid.docker.icon: "https://raw.githubusercontent.com/ChristiaanLouw/Unmanic-Controller/main/Container/static/UnmanicController.png"
+      net.unraid.docker.webui: "http://[IP]:[PORT:8080]/"
+      net.unraid.docker.shell: "sh"

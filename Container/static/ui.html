@@ -180,6 +180,7 @@ function colorize(text){
 
 let authenticated=false
 let currentUIPassword=''
+let initialized=false
 
 function showTab(t){
   home.classList.add('hidden')
@@ -215,8 +216,22 @@ async function apiFetch(u,o={}){
   return r
 }
 
+async function checkSession(){
+  const r=await fetch('/api/session')
+  const s=await r.json()
+  authenticated=!!s.authenticated
+  if(authenticated){
+    loginOverlay.style.display='none'
+    init()
+  }else{
+    loginOverlay.style.display='flex'
+  }
+}
+
 async function init(){
+  if(initialized) return
   const s=await apiFetch('/api/settings').then(r=>r.json())
+  initialized=true
   unmanic_url.value=s.unmanic_url
   unmanic_username.value=s.unmanic_username
   unmanic_password.value=s.unmanic_password
@@ -246,8 +261,7 @@ async function saveUnmanicSettings(){
       auto_start_timer:auto_start_timer.checked
     })
   })
-  toast('success','Settings saved. Please log in again.')
-  logout()
+  toast('success','Settings saved')
 }
 
 async function saveUIPassword(){
@@ -266,8 +280,11 @@ async function saveUIPassword(){
     })
   })
 
-  toast('success','Password changed. Please log in again.')
-  logout()
+  currentUIPassword=ui_password_new.value
+  ui_password_display.value=''
+  ui_password_new.value=''
+  ui_password_confirm.value=''
+  toast('success','Password changed')
 }
 
 async function loadWorkers(){
@@ -308,6 +325,7 @@ async function updateTimer(){
 setInterval(()=>authenticated&&loadLogs(),5000)
 setInterval(()=>authenticated&&loadWorkers(),60000)
 setInterval(()=>authenticated&&updateTimer(),1000)
+checkSession()
 </script>
 
 </body>
