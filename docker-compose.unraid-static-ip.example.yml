@@ -1,0 +1,10 @@
+services:
+  unmanic-controller:
+    networks:
+      unraid_custom:
+        ipv4_address: ${UNMANIC_CONTROLLER_IP}
+
+networks:
+  unraid_custom:
+    name: ${UNRAID_DOCKER_NETWORK:-br2}
+    external: true

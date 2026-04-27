@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Unmanic Controller</title>
+<link rel="icon" href="/favicon.ico">
+
+<style>
+body{margin:0;font-family:Arial;background:#121212;color:#e0e0e0}
+header{background:#1e1e1e;padding:16px;display:flex;align-items:center;gap:12px}
+header img{height:32px}
+main{display:flex;height:calc(100vh - 64px)}
+.left{flex:2;padding:20px;overflow:auto}
+.right{flex:1;padding:20px;background:#0f0f0f;overflow:auto}
+.card{background:#1e1e1e;border-radius:8px;padding:16px;margin-bottom:20px}
+label{font-weight:bold}
+.desc{font-size:12px;color:#aaa;margin-bottom:6px}
+input{width:100%;padding:8px;margin-bottom:12px;background:#2c2c2c;border:none;color:#fff}
+input[type="checkbox"]{width:auto;margin-right:8px}
+button{background:#2c2c2c;color:#fff;border:none;padding:6px 12px;cursor:pointer}
+pre{max-height:400px;overflow:auto;white-space:pre-wrap}
+.hidden{display:none}
+.error{color:#e74c3c}
+.success{color:#2ecc71}
+.ignored{color:#3498db}
+.readonly{opacity:.7}
+
+#timerBar{height:10px;background:#2ecc71;width:0;margin-top:8px}
+
+#loginOverlay{
+  position:fixed;inset:0;background:#000c;
+  display:flex;align-items:center;justify-content:center
+}
+#loginBox{background:#1e1e1e;padding:24px;border-radius:8px;width:300px}
+
+/* TOASTS */
+#toastContainer{
+  position:fixed;bottom:20px;right:20px;z-index:9999
+}
+.toast{
+  background:#1e1e1e;
+  padding:12px 16px;
+  margin-top:10px;
+  border-radius:6px;
+  min-width:220px;
+  animation:fadein .2s
+}
+.toast.success{border-left:4px solid #2ecc71}
+.toast.error{border-left:4px solid #e74c3c}
+@keyframes fadein{from{opacity:0;transform:translateY(10px)}to{opacity:1}}
+</style>
+</head>
+
+<body>
+
+<div id="toastContainer"></div>
+
+<!-- LOGIN -->
+<div id="loginOverlay">
+  <div id="loginBox">
+    <h3>Login</h3>
+    <input id="loginUser" placeholder="Username">
+    <input id="loginPass" type="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <div id="loginError" class="error hidden">Invalid credentials</div>
+  </div>
+</div>
+
+<header>
+  <img src="/favicon.ico">
+  <strong>Unmanic Controller</strong>
+  <div style="margin-left:auto">
+    <button onclick="showTab('home')">Home</button>
+    <button onclick="showTab('settings')">Settings</button>
+    <button onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<main>
+<div class="left">
+
+<!-- HOME -->
+<div id="home">
+  <div class="card">
+    <button onclick="action('pause')">Pause Workers</button>
+    <button onclick="action('resume')">Resume Workers</button>
+  </div>
+
+  <div class="card">
+    <h3>Resume Timer</h3>
+    <div id="timerText">Inactive</div>
+    <div id="timerBar"></div>
+  </div>
+
+  <div class="card">
+    <h3>Workers</h3>
+    <div id="workers">Loading...</div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="settings" class="hidden">
+
+  <!-- UNMANIC SETTINGS -->
+  <div class="card">
+    <h3>Unmanic Settings</h3>
+
+    <label>Unmanic URL</label>
+    <input id="unmanic_url">
+
+    <label>Unmanic Username</label>
+    <input id="unmanic_username">
+
+    <label>Unmanic Password</label>
+    <input id="unmanic_password">
+
+    <label>Resume Delay (seconds)</label>
+    <input id="startup_delay" type="number">
+
+    <div style="margin-top:12px">
+      <label>
+        <input type="checkbox" id="auto_start_timer">
+        Auto-start resume timer on container start
+      </label>
+    </div>
+
+    <div style="margin-top:20px">
+      <button onclick="saveUnmanicSettings()">Save Settings</button>
+    </div>
+  </div>
+
+  <!-- UI CREDENTIALS -->
+  <div class="card">
+    <h3>Web UI Credentials</h3>
+
+    <label>Current UI Username</label>
+    <input id="ui_username" class="readonly" readonly>
+
+    <label>Current UI Password</label>
+    <input id="ui_password_display" class="readonly" readonly>
+    <button onclick="showUIPassword()">Display Password</button>
+
+    <hr style="margin:16px 0;border:1px solid #333">
+
+    <label>New UI Password</label>
+    <input id="ui_password_new" type="password">
+
+    <label>Confirm New UI Password</label>
+    <input id="ui_password_confirm" type="password">
+
+    <div id="pwError" class="error hidden">Passwords do not match</div>
+
+    <button onclick="saveUIPassword()">Save Password</button>
+  </div>
+
+</div>
+</div>
+
+<div class="right">
+  <div class="card"><h3>API Log</h3><pre id="apiLog"></pre></div>
+  <div class="card"><h3>Webhook Log</h3><pre id="webhookLog"></pre></div>
+</div>
+</main>
+
+<script>
+function toast(type,msg){
+  const d=document.createElement('div')
+  d.className='toast '+type
+  d.textContent=msg
+  toastContainer.appendChild(d)
+  setTimeout(()=>d.remove(),3000)
+}
+
+function colorize(text){
+  return text
+    .replace(/(ERROR|FAILED)/gi,'<span class="error">$1</span>')
+    .replace(/(SUCCESS|OK)/gi,'<span class="success">$1</span>')
+    .replace(/IGNORED/gi,'<span class="ignored">IGNORED</span>')
+}
+
+let authenticated=false
+let currentUIPassword=''
+
+function showTab(t){
+  home.classList.add('hidden')
+  settings.classList.add('hidden')
+  document.getElementById(t).classList.remove('hidden')
+}
+
+async function login(){
+  const r=await fetch('/login',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:loginUser.value,password:loginPass.value})
+  })
+  if(r.ok){
+    authenticated=true
+    loginOverlay.style.display='none'
+    init()
+  }else loginError.classList.remove('hidden')
+}
+
+async function logout(){
+  await fetch('/logout')
+  location.reload()
+}
+
+async function apiFetch(u,o={}){
+  const r=await fetch(u,o)
+  if(r.status===401){
+    authenticated=false
+    loginOverlay.style.display='flex'
+    throw 0
+  }
+  return r
+}
+
+async function init(){
+  const s=await apiFetch('/api/settings').then(r=>r.json())
+  unmanic_url.value=s.unmanic_url
+  unmanic_username.value=s.unmanic_username
+  unmanic_password.value=s.unmanic_password
+  startup_delay.value=s.startup_delay
+  auto_start_timer.checked=s.auto_start_timer
+  ui_username.value=s.ui_username
+  currentUIPassword=s.ui_password
+
+  loadWorkers()
+  loadLogs()
+  updateTimer()
+}
+
+function showUIPassword(){
+  ui_password_display.value=currentUIPassword
+}
+
+async function saveUnmanicSettings(){
+  await apiFetch('/api/settings',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      unmanic_url:unmanic_url.value,
+      unmanic_username:unmanic_username.value,
+      unmanic_password:unmanic_password.value,
+      startup_delay:+startup_delay.value,
+      auto_start_timer:auto_start_timer.checked
+    })
+  })
+  toast('success','Settings saved. Please log in again.')
+  logout()
+}
+
+async function saveUIPassword(){
+  pwError.classList.add('hidden')
+  if(ui_password_new.value!==ui_password_confirm.value){
+    pwError.classList.remove('hidden')
+    return
+  }
+
+  await apiFetch('/api/settings',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      ui_username:ui_username.value,
+      ui_password:ui_password_new.value
+    })
+  })
+
+  toast('success','Password changed. Please log in again.')
+  logout()
+}
+
+async function loadWorkers(){
+  const w=await apiFetch('/api/workers').then(r=>r.json())
+  workers.innerHTML=w.length
+    ? w.map(x=>`
+      <div style="margin-bottom:10px">
+        <b>${x.name}</b><br>
+        Status: ${x.paused?'Paused':'Running'} ${x.idle?'(Idle)':''}<br>
+        <small>${x.current_file||''}</small>
+      </div>
+    `).join('')
+    : '<i>No workers</i>'
+}
+
+async function action(c){
+  await apiFetch('/api/action/'+c,{method:'POST'})
+  toast('success','Action executed')
+  loadWorkers()
+}
+
+async function loadLogs(){
+  apiLog.innerHTML=colorize(await apiFetch('/api/logs/api').then(r=>r.text()))
+  webhookLog.innerHTML=colorize(await apiFetch('/api/logs/webhook').then(r=>r.text()))
+}
+
+async function updateTimer(){
+  const t=await apiFetch('/api/timer').then(r=>r.json())
+  if(t.active){
+    timerText.textContent=`Resuming in ${t.remaining}s`
+    timerBar.style.width=(t.total ? t.remaining/t.total*100 : 0)+'%'
+  }else{
+    timerText.textContent='Inactive'
+    timerBar.style.width='0'
+  }
+}
+
+setInterval(()=>authenticated&&loadLogs(),5000)
+setInterval(()=>authenticated&&loadWorkers(),60000)
+setInterval(()=>authenticated&&updateTimer(),1000)
+</script>
+
+</body>
+</html>

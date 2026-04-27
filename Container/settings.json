@@ -1,0 +1,12 @@
+{
+  "plex_url": "",
+  "plex_token": "",
+  "unmanic_url": "",
+  "unmanic_username": "",
+  "unmanic_password": "",
+  "startup_delay": 120,
+  "ui_username": "admin",
+  "ui_password": "admin",
+  "auto_start_timer": true,
+  "auto_resume_enabled": true
+}
