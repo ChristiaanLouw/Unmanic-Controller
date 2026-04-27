@@ -11,10 +11,13 @@ from collections import deque
 
 # ================= PATHS =================
 BASE_DIR = "/appdata"
+APP_DIR = "/app"
 STATIC_PATH = f"{BASE_DIR}/static"
+APP_STATIC_PATH = f"{APP_DIR}/static"
 LOG_PATH = f"{BASE_DIR}/logs"
 
 CONFIG_PATH = f"{BASE_DIR}/settings.json"
+DEFAULT_CONFIG_PATH = f"{APP_DIR}/default-settings.json"
 API_LOG = f"{LOG_PATH}/api.log"
 WEBHOOK_LOG = f"{LOG_PATH}/webhook.log"
 
@@ -27,6 +30,8 @@ WEB_PORT = int(os.getenv("WEB_PORT", "8080"))
 
 # ================= DEFAULTS =================
 DEFAULTS = {
+    "plex_url": "",
+    "plex_token": "",
     "unmanic_url": "http://localhost:8888",
     "unmanic_username": "",
     "unmanic_password": "",
@@ -40,7 +45,11 @@ DEFAULTS = {
 # ================= SETTINGS =================
 def load_settings():
     if not os.path.exists(CONFIG_PATH):
-        save_settings(DEFAULTS)
+        defaults = dict(DEFAULTS)
+        if os.path.exists(DEFAULT_CONFIG_PATH):
+            with open(DEFAULT_CONFIG_PATH) as f:
+                defaults.update(json.load(f))
+        save_settings(defaults)
     with open(CONFIG_PATH) as f:
         data = json.load(f)
     if "username" in data and "unmanic_username" not in data:
@@ -216,9 +225,15 @@ CORS(app)
 def require_auth():
     return not session.get("auth")
 
+def static_file(name):
+    local_path = os.path.join(STATIC_PATH, name)
+    if os.path.exists(local_path):
+        return local_path
+    return os.path.join(APP_STATIC_PATH, name)
+
 @app.route("/")
 def index():
-    return send_file(f"{STATIC_PATH}/ui.html")
+    return send_file(static_file("ui.html"))
 
 @app.route("/health")
 def health():
@@ -226,7 +241,7 @@ def health():
 
 @app.route("/favicon.ico")
 def favicon():
-    ico = f"{STATIC_PATH}/favicon.ico"
+    ico = static_file("favicon.ico")
     return send_file(ico) if os.path.exists(ico) else ("", 204)
 
 @app.route("/login", methods=["POST"])
@@ -263,6 +278,8 @@ def api_settings():
             "unmanic_url",
             "unmanic_username",
             "unmanic_password",
+            "plex_url",
+            "plex_token",
             "startup_delay",
             "ui_username",
             "ui_password",

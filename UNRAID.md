@@ -13,6 +13,13 @@ cp Container/settings.example.json Container/settings.json
 docker compose up -d --build
 ```
 
+Once the Docker Hub image is published, use this instead:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
 Open the web UI on:
 
 ```text
@@ -39,7 +46,15 @@ UNMANIC_CONTROLLER_IP=192.168.6.91
 Start with both compose files:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.unraid-static-ip.example.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.unraid-static-ip.example.yml up -d
 ```
 
 Then use the static IP for the web UI and Plex webhook.
+
+## Build locally from source
+
+Use this if you want Unraid to build the image instead of pulling from Docker Hub:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```

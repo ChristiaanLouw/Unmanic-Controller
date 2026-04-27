@@ -13,6 +13,7 @@ When playback starts in Plex, the controller pauses Unmanic workers. When playba
 ## Files
 
 - `docker-compose.yml` - portable default Docker Compose service.
+- `docker-compose.build.yml` - optional local build override.
 - `docker-compose.unraid-static-ip.example.yml` - optional Unraid custom network/static IP override.
 - `.env.example` - configurable ports, timezone, and Flask secret.
 - `Dockerfile` and `requirements.txt` - reusable Python runtime image.
@@ -28,6 +29,19 @@ When playback starts in Plex, the controller pauses Unmanic workers. When playba
 cp .env.example .env
 cp Container/settings.example.json Container/settings.json
 docker compose up -d --build
+```
+
+After the image is published to Docker Hub, you can pull it instead:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+For local development builds:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 Web UI:
@@ -66,3 +80,16 @@ Change it after first login.
 ## Unraid
 
 See `UNRAID.md` for both the normal bridge install and the optional custom network/static IP setup.
+
+## Docker Hub Publishing
+
+The GitHub Actions workflow in `.github/workflows/dockerhub.yml` publishes the image to Docker Hub on pushes to `main`, tags like `v1.0.0`, and manual workflow runs.
+
+Add these GitHub repository secrets:
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+```
+
+Create the token in Docker Hub under Account Settings -> Personal access tokens.

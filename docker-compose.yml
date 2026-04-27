@@ -1,7 +1,6 @@
 services:
   unmanic-controller:
-    build: .
-    image: unmanic-controller:local
+    image: ${DOCKER_IMAGE:-christiaanlouw/unmanic-controller:latest}
     container_name: unmanic-controller
     restart: unless-stopped
     ports:
