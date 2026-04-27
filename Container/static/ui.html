@@ -19,6 +19,8 @@ input{width:100%;padding:8px;margin-bottom:12px;background:#2c2c2c;border:none;c
 input[type="checkbox"]{width:auto;margin-right:8px}
 button{background:#2c2c2c;color:#fff;border:none;padding:6px 12px;cursor:pointer}
 pre{max-height:400px;overflow:auto;white-space:pre-wrap}
+.keyRow{border-top:1px solid #333;padding:12px 0}
+.keyUrl{font-family:monospace;font-size:12px;word-break:break-all;color:#ccc;margin:6px 0}
 .hidden{display:none}
 .error{color:#e74c3c}
 .success{color:#2ecc71}
@@ -129,6 +131,15 @@ pre{max-height:400px;overflow:auto;white-space:pre-wrap}
     </div>
   </div>
 
+  <div class="card">
+    <h3>Plex Webhook API Keys</h3>
+    <label>Key Name</label>
+    <input id="webhook_key_name" placeholder="LouwPlex">
+    <button onclick="createWebhookKey()">Generate Key</button>
+    <div class="desc" style="margin-top:10px">If no keys exist, webhooks are accepted without a key. Once a key exists, Plex webhook URLs must include one.</div>
+    <div id="webhookKeys" style="margin-top:12px"></div>
+  </div>
+
   <!-- UI CREDENTIALS -->
   <div class="card">
     <h3>Web UI Credentials</h3>
@@ -181,6 +192,7 @@ function colorize(text){
 let authenticated=false
 let currentUIPassword=''
 let initialized=false
+let webhookPort='9777'
 
 function showTab(t){
   home.classList.add('hidden')
@@ -239,14 +251,103 @@ async function init(){
   auto_start_timer.checked=s.auto_start_timer
   ui_username.value=s.ui_username
   currentUIPassword=s.ui_password
+  webhookPort=s.webhook_port||'9777'
 
   loadWorkers()
   loadLogs()
+  loadWebhookKeys()
   updateTimer()
 }
 
 function showUIPassword(){
   ui_password_display.value=currentUIPassword
+}
+
+function webhookUrl(key){
+  return `${location.protocol}//${location.hostname}:${webhookPort}/?key=${encodeURIComponent(key)}`
+}
+
+async function copyText(text){
+  if(navigator.clipboard && window.isSecureContext){
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const el=document.createElement('textarea')
+  el.value=text
+  document.body.appendChild(el)
+  el.select()
+  document.execCommand('copy')
+  el.remove()
+}
+
+function renderWebhookKeys(keys){
+  webhookKeys.innerHTML=''
+  if(!keys.length){
+    webhookKeys.innerHTML='<i>No webhook keys generated</i>'
+    return
+  }
+
+  keys.forEach(k=>{
+    const row=document.createElement('div')
+    row.className='keyRow'
+
+    const title=document.createElement('b')
+    title.textContent=k.name
+    row.appendChild(title)
+
+    const created=document.createElement('div')
+    created.className='desc'
+    created.textContent='Created '+(k.created_at||'')
+    row.appendChild(created)
+
+    const url=document.createElement('div')
+    url.className='keyUrl'
+    url.textContent=webhookUrl(k.key)
+    row.appendChild(url)
+
+    const copy=document.createElement('button')
+    copy.textContent='Copy URL'
+    copy.onclick=async()=>{
+      await copyText(webhookUrl(k.key))
+      toast('success','Webhook URL copied')
+    }
+    row.appendChild(copy)
+
+    const del=document.createElement('button')
+    del.textContent='Delete'
+    del.style.marginLeft='8px'
+    del.onclick=()=>deleteWebhookKey(k.key)
+    row.appendChild(del)
+
+    webhookKeys.appendChild(row)
+  })
+}
+
+async function loadWebhookKeys(){
+  const keys=await apiFetch('/api/webhook-keys').then(r=>r.json())
+  renderWebhookKeys(keys)
+}
+
+async function createWebhookKey(){
+  const name=webhook_key_name.value.trim()
+  if(!name){
+    toast('error','Enter a key name')
+    return
+  }
+  await apiFetch('/api/webhook-keys',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name})
+  })
+  webhook_key_name.value=''
+  toast('success','Webhook key generated')
+  loadWebhookKeys()
+}
+
+async function deleteWebhookKey(key){
+  await apiFetch('/api/webhook-keys/'+encodeURIComponent(key),{method:'DELETE'})
+  toast('success','Webhook key deleted')
+  loadWebhookKeys()
 }
 
 async function saveUnmanicSettings(){

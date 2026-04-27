@@ -26,6 +26,8 @@ If Unraid does not show the WebUI menu or icon after an update, recreate the con
 docker compose up -d --force-recreate
 ```
 
+If Unraid still does not refresh the WebUI/icon metadata, remove the container and recreate it from Compose. Your settings and logs live in `Container/`, so removing the container does not delete the app configuration.
+
 Open the web UI on:
 
 ```text

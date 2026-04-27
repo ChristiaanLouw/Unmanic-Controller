@@ -8,6 +8,7 @@ import cgi
 import requests
 from requests.auth import HTTPBasicAuth
 from collections import deque
+from urllib.parse import parse_qs, urlparse
 
 # ================= PATHS =================
 BASE_DIR = "/appdata"
@@ -39,7 +40,8 @@ DEFAULTS = {
     "ui_username": "admin",
     "ui_password": "admin",
     "auto_resume_enabled": True,
-    "auto_start_timer": False
+    "auto_start_timer": False,
+    "webhook_keys": []
 }
 
 # ================= SETTINGS =================
@@ -68,6 +70,9 @@ def save_settings(s):
         json.dump(s, f, indent=2)
 
 settings = load_settings()
+
+def save_current_settings():
+    save_settings(settings)
 
 # ================= LOGGING =================
 def rotate_log(path, max_lines=1000):
@@ -128,6 +133,21 @@ def resume_all():
     r = api_call("POST", "/unmanic/api/v2/workers/worker/resume/all")
     return bool(r and r.ok)
 
+def webhook_key_allowed(handler):
+    keys = settings.get("webhook_keys", [])
+    if not keys:
+        return True
+
+    parsed = urlparse(handler.path)
+    qs = parse_qs(parsed.query)
+    supplied = (qs.get("key") or qs.get("api_key") or qs.get("token") or [""])[0]
+
+    auth = handler.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        supplied = auth.split(" ", 1)[1].strip()
+
+    return any(item.get("key") == supplied for item in keys)
+
 # ================= TIMER =================
 generation = 0
 timer_start = None
@@ -179,6 +199,12 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
+        if not webhook_key_allowed(self):
+            log(WEBHOOK_LOG, "[DENIED] Missing or invalid webhook API key")
+            self.send_response(401)
+            self.end_headers()
+            return
+
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
         ct = self.headers.get("Content-Type", "")
@@ -306,7 +332,42 @@ def api_settings():
     data = dict(settings)
     data["auto_start_timer"] = bool(data.get("auto_start_timer", data.get("auto_resume_enabled", True)))
     data["auto_resume_enabled"] = bool(data.get("auto_resume_enabled", data["auto_start_timer"]))
+    data["webhook_port"] = WEBHOOK_PORT
     return jsonify(data)
+
+@app.route("/api/webhook-keys", methods=["GET", "POST"])
+def api_webhook_keys():
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    settings.setdefault("webhook_keys", [])
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        name = str(data.get("name", "")).strip()
+        if not name:
+            return jsonify({"error": "name required"}), 400
+        item = {
+            "name": name,
+            "key": secrets.token_urlsafe(32),
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        settings["webhook_keys"].append(item)
+        save_current_settings()
+        return jsonify(item), 201
+
+    return jsonify(settings["webhook_keys"])
+
+@app.route("/api/webhook-keys/<key>", methods=["DELETE"])
+def api_delete_webhook_key(key):
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    settings["webhook_keys"] = [
+        item for item in settings.get("webhook_keys", [])
+        if item.get("key") != key
+    ]
+    save_current_settings()
+    return jsonify({"success": True})
 
 @app.route("/api/action/<cmd>", methods=["POST"])
 def api_action(cmd):

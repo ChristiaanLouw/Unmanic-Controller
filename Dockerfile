@@ -1,5 +1,9 @@
 FROM python:3.11-alpine
 
+LABEL net.unraid.docker.icon="https://raw.githubusercontent.com/ChristiaanLouw/Unmanic-Controller/main/Container/static/unmanic-controller-icon.png"
+LABEL net.unraid.docker.webui="http://[IP]:[PORT:8080]/"
+LABEL net.unraid.docker.shell="sh"
+
 WORKDIR /app
 
 COPY requirements.txt .

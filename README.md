@@ -77,6 +77,18 @@ admin / admin
 
 Change it after first login.
 
+## Plex Webhook Keys
+
+In the web UI, open Settings and generate a named Plex webhook API key for each Plex instance, such as `LouwPlex` or `Shared`.
+
+Use the generated URL as that Plex server's webhook URL:
+
+```text
+http://YOUR_DOCKER_HOST:9777/?key=GENERATED_KEY
+```
+
+If no webhook keys exist, webhooks are accepted without a key. Once at least one key exists, incoming Plex webhooks must include a valid key.
+
 ## Unraid
 
 See `UNRAID.md` for both the normal bridge install and the optional custom network/static IP setup.
