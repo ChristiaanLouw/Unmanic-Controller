@@ -50,7 +50,9 @@ DEFAULTS = {
     "webhook_keys": [],
     "plex_monitor_enabled": False,
     "plex_poll_interval": 10,
-    "plex_servers": []
+    "plex_servers": [],
+    "media_monitor_enabled": False,
+    "media_servers": []
 }
 MIN_RESUME_DELAY = 60
 MAX_RESUME_DELAY = 600
@@ -89,6 +91,7 @@ def has_custom_settings(data):
         "unmanic_password",
         "webhook_keys",
         "plex_servers",
+        "media_servers",
     )
     return any(bool(data.get(key)) for key in checks)
 
@@ -232,9 +235,13 @@ plex_monitor_state = {
     "enabled": False,
     "active": False,
     "last_check": None,
-    "servers": []
+    "servers": [],
+    "media_enabled": False,
+    "media_active": False,
+    "media_servers": []
 }
 plex_monitor_lock = threading.Lock()
+monitor_playback_active = False
 
 def plex_sessions(server):
     url = server["url"].rstrip("/") + "/status/sessions"
@@ -286,34 +293,103 @@ def test_plex_connection(server):
         result["message"] = result["error"]
     return result
 
+def media_sessions(server):
+    url = server["url"].rstrip("/") + "/Sessions"
+    server_type = server.get("type", "jellyfin")
+    try:
+        r = requests.get(
+            url,
+            headers={"X-Emby-Token": server.get("token", "")},
+            timeout=10
+        )
+        r.raise_for_status()
+        sessions = r.json()
+        playing = 0
+        paused = 0
+        total = 0
+
+        for item in sessions:
+            play_state = item.get("PlayState") or {}
+            now_playing = item.get("NowPlayingItem")
+            if not now_playing:
+                continue
+            total += 1
+            if play_state.get("IsPaused"):
+                paused += 1
+            else:
+                playing += 1
+
+        return {
+            "id": server.get("id"),
+            "name": server.get("name", "Media Server"),
+            "type": server_type,
+            "ok": True,
+            "playing": playing,
+            "paused": paused,
+            "total": total,
+            "error": ""
+        }
+    except Exception as e:
+        return {
+            "id": server.get("id"),
+            "name": server.get("name", "Media Server"),
+            "type": server_type,
+            "ok": False,
+            "playing": 0,
+            "paused": 0,
+            "total": 0,
+            "error": str(e)
+        }
+
+def test_media_connection(server):
+    result = media_sessions(server)
+    if result["ok"]:
+        result["message"] = f"Connected. {result['total']} active sessions."
+    else:
+        result["message"] = result["error"]
+    return result
+
 def poll_plex_servers():
+    global monitor_playback_active
     enabled = bool(settings.get("plex_monitor_enabled"))
     servers = [
         s for s in settings.get("plex_servers", [])
         if s.get("enabled", True) and s.get("url") and s.get("token")
     ]
+    media_enabled = bool(settings.get("media_monitor_enabled"))
+    media_servers = [
+        s for s in settings.get("media_servers", [])
+        if s.get("enabled", True) and s.get("url") and s.get("token")
+    ]
 
     results = [plex_sessions(server) for server in servers] if enabled else []
+    media_results = [media_sessions(server) for server in media_servers] if media_enabled else []
     active = any(item["playing"] > 0 for item in results if item["ok"])
+    media_active = any(item["playing"] > 0 for item in media_results if item["ok"])
+    any_active = active or media_active
 
     with plex_monitor_lock:
-        was_active = plex_monitor_state["active"]
+        was_active = monitor_playback_active
+        monitor_playback_active = any_active
         plex_monitor_state.update({
             "enabled": enabled,
             "active": active,
             "last_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "servers": results
+            "servers": results,
+            "media_enabled": media_enabled,
+            "media_active": media_active,
+            "media_servers": media_results
         })
 
-    if not enabled or not servers:
+    if not (enabled and servers) and not (media_enabled and media_servers):
         return
 
-    if active and not was_active:
-        log(WEBHOOK_LOG, "[PLEX MONITOR] Playback detected")
+    if any_active and not was_active:
+        log(WEBHOOK_LOG, "[MEDIA MONITOR] Playback detected")
         cancel_timer()
         pause_all()
-    elif not active and was_active:
-        log(WEBHOOK_LOG, "[PLEX MONITOR] No active playback")
+    elif not any_active and was_active:
+        log(WEBHOOK_LOG, "[MEDIA MONITOR] No active playback")
         schedule_resume()
 
 def plex_monitor_loop():
@@ -500,6 +576,7 @@ def api_settings():
             "auto_start_timer",
             "plex_monitor_enabled",
             "plex_poll_interval",
+            "media_monitor_enabled",
         }
         for key, value in updates.items():
             if key not in allowed:
@@ -579,6 +656,61 @@ def api_plex_monitor_status():
         return jsonify({"error": "unauthorized"}), 401
     with plex_monitor_lock:
         return jsonify(dict(plex_monitor_state))
+
+@app.route("/api/media-servers", methods=["GET", "POST"])
+def api_media_servers():
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    settings.setdefault("media_servers", [])
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        name = str(data.get("name", "")).strip()
+        url = str(data.get("url", "")).strip()
+        token = str(data.get("token", "")).strip()
+        server_type = str(data.get("type", "jellyfin")).strip().lower()
+        if server_type not in {"jellyfin", "emby"}:
+            return jsonify({"error": "type must be jellyfin or emby"}), 400
+        if not name or not url or not token:
+            return jsonify({"error": "name, url, and token required"}), 400
+        server = {
+            "id": secrets.token_hex(8),
+            "name": name,
+            "type": server_type,
+            "url": url,
+            "token": token,
+            "enabled": bool(data.get("enabled", True))
+        }
+        settings["media_servers"].append(server)
+        save_current_settings()
+        return jsonify(server), 201
+
+    return jsonify(settings["media_servers"])
+
+@app.route("/api/media-servers/<server_id>", methods=["DELETE"])
+def api_delete_media_server(server_id):
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    settings["media_servers"] = [
+        item for item in settings.get("media_servers", [])
+        if item.get("id") != server_id
+    ]
+    save_current_settings()
+    return jsonify({"success": True})
+
+@app.route("/api/media-servers/<server_id>/test", methods=["POST"])
+def api_test_media_server(server_id):
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    server = next(
+        (item for item in settings.get("media_servers", []) if item.get("id") == server_id),
+        None
+    )
+    if not server:
+        return jsonify({"ok": False, "message": "Media server not found"}), 404
+    return jsonify(test_media_connection(server))
 
 @app.route("/api/webhook-keys", methods=["GET", "POST"])
 def api_webhook_keys():

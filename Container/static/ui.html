@@ -175,6 +175,38 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
     <div id="webhookKeys" style="margin-top:12px"></div>
   </div>
 
+  <div class="card">
+    <h3>Jellyfin / Emby Session Monitor</h3>
+    <div style="margin-top:12px">
+      <label>
+        <input type="checkbox" id="media_monitor_enabled">
+        Monitor Jellyfin / Emby sessions directly
+      </label>
+    </div>
+
+    <label>Server Type</label>
+    <select id="media_server_type" style="width:100%;padding:8px;margin-bottom:12px;background:#2c2c2c;border:none;color:#fff">
+      <option value="jellyfin">Jellyfin</option>
+      <option value="emby">Emby</option>
+    </select>
+
+    <label>Server Name</label>
+    <input id="media_server_name" placeholder="JellyfinServer">
+
+    <label>Server URL</label>
+    <input id="media_server_url" placeholder="http://YOUR_JELLYFIN_HOST:8096">
+
+    <label>API Key</label>
+    <input id="media_server_token" type="password">
+
+    <button onclick="createMediaServer()">Add Media Server</button>
+    <button onclick="saveUnmanicSettings()" style="margin-left:8px">Save Monitor Settings</button>
+
+    <div class="desc" style="margin-top:10px">This monitors active Jellyfin or Emby sessions through the server API.</div>
+    <div id="mediaServers" style="margin-top:12px"></div>
+    <div id="mediaMonitorStatus" style="margin-top:12px"></div>
+  </div>
+
   <!-- UI CREDENTIALS -->
   <div class="card">
     <h3>Web UI Credentials</h3>
@@ -205,6 +237,7 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
 
 <div class="right">
   <div class="card"><h3>Plex Monitor</h3><div id="homePlexMonitorStatus"></div></div>
+  <div class="card"><h3>Jellyfin / Emby Monitor</h3><div id="homeMediaMonitorStatus"></div></div>
   <div class="card"><h3>API Log</h3><pre id="apiLog"></pre></div>
   <div class="card"><h3>Webhook Log</h3><pre id="webhookLog"></pre></div>
 </div>
@@ -296,6 +329,7 @@ async function init(){
   startup_delay.value=s.startup_delay
   auto_start_timer.checked=s.auto_start_timer
   plex_monitor_enabled.checked=!!s.plex_monitor_enabled
+  media_monitor_enabled.checked=!!s.media_monitor_enabled
   plex_poll_interval.value=s.plex_poll_interval||10
   ui_username.value=s.ui_username
   currentUIPassword=s.ui_password
@@ -305,6 +339,7 @@ async function init(){
   loadLogs()
   loadWebhookKeys()
   loadPlexServers()
+  loadMediaServers()
   loadPlexMonitorStatus()
   updateTimer()
 }
@@ -488,6 +523,86 @@ async function testPlexServer(id){
   loadPlexMonitorStatus()
 }
 
+function renderMediaServers(servers){
+  mediaServers.innerHTML=''
+  if(!servers.length){
+    mediaServers.innerHTML='<i>No Jellyfin or Emby servers added</i>'
+    return
+  }
+
+  servers.forEach(s=>{
+    const row=document.createElement('div')
+    row.className='keyRow'
+
+    const title=document.createElement('b')
+    title.textContent=`${s.name} (${s.type||'media'})`
+    row.appendChild(title)
+
+    const url=document.createElement('div')
+    url.className='keyUrl'
+    url.textContent=s.url
+    row.appendChild(url)
+
+    const state=document.createElement('div')
+    state.className='desc'
+    state.textContent=s.enabled?'Enabled':'Disabled'
+    row.appendChild(state)
+
+    const test=document.createElement('button')
+    test.textContent='Test'
+    test.onclick=()=>testMediaServer(s.id)
+    row.appendChild(test)
+
+    const del=document.createElement('button')
+    del.textContent='Delete'
+    del.style.marginLeft='8px'
+    del.onclick=()=>deleteMediaServer(s.id)
+    row.appendChild(del)
+
+    mediaServers.appendChild(row)
+  })
+}
+
+async function loadMediaServers(){
+  const servers=await apiFetch('/api/media-servers').then(r=>r.json())
+  renderMediaServers(servers)
+}
+
+async function createMediaServer(){
+  const type=media_server_type.value
+  const name=media_server_name.value.trim()
+  const url=media_server_url.value.trim()
+  const token=media_server_token.value.trim()
+  if(!name||!url||!token){
+    toast('error','Enter server name, URL, and API key')
+    return
+  }
+  await apiFetch('/api/media-servers',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({type,name,url,token,enabled:true})
+  })
+  media_server_name.value=''
+  media_server_url.value=''
+  media_server_token.value=''
+  toast('success','Media server added')
+  loadMediaServers()
+  loadPlexMonitorStatus()
+}
+
+async function deleteMediaServer(id){
+  await apiFetch('/api/media-servers/'+encodeURIComponent(id),{method:'DELETE'})
+  toast('success','Media server deleted')
+  loadMediaServers()
+  loadPlexMonitorStatus()
+}
+
+async function testMediaServer(id){
+  const result=await apiFetch('/api/media-servers/'+encodeURIComponent(id)+'/test',{method:'POST'}).then(r=>r.json())
+  toast(result.ok?'success':'error', result.message)
+  loadPlexMonitorStatus()
+}
+
 function renderPlexMonitorStatus(s){
   const active=s.active?'Active playback detected':'No active playback'
   const rows=(s.servers||[]).map(x=>{
@@ -502,6 +617,21 @@ function renderPlexMonitorStatus(s){
   `
   plexMonitorStatus.innerHTML=html
   homePlexMonitorStatus.innerHTML=html
+
+  const mediaActive=s.media_active?'Active playback detected':'No active playback'
+  const mediaRows=(s.media_servers||[]).map(x=>{
+    const label=`${x.name} (${x.type||'media'})`
+    if(!x.ok) return `<div class="statusLine"><b>${label}</b>: ERROR ${x.error}</div>`
+    return `<div class="statusLine"><b>${label}</b>: ${x.playing} playing, ${x.paused} paused, ${x.total} total</div>`
+  }).join('')
+  const mediaHtml=`
+    <div class="statusLine"><b>Monitor:</b> ${s.media_enabled?'Enabled':'Disabled'}</div>
+    <div class="statusLine"><b>Status:</b> ${mediaActive}</div>
+    <div class="statusLine"><b>Last check:</b> ${s.last_check||'Never'}</div>
+    ${mediaRows||'<div class="statusLine">No enabled Jellyfin/Emby servers with API keys configured</div>'}
+  `
+  mediaMonitorStatus.innerHTML=mediaHtml
+  homeMediaMonitorStatus.innerHTML=mediaHtml
 }
 
 async function loadPlexMonitorStatus(){
@@ -522,6 +652,7 @@ async function saveUnmanicSettings(){
       startup_delay:+startup_delay.value,
       auto_start_timer:auto_start_timer.checked,
       plex_monitor_enabled:plex_monitor_enabled.checked,
+      media_monitor_enabled:media_monitor_enabled.checked,
       plex_poll_interval:+plex_poll_interval.value
     })
   })

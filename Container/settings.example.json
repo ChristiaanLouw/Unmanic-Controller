@@ -12,5 +12,7 @@
   "webhook_keys": [],
   "plex_monitor_enabled": false,
   "plex_poll_interval": 10,
-  "plex_servers": []
+  "plex_servers": [],
+  "media_monitor_enabled": false,
+  "media_servers": []
 }

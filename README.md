@@ -7,6 +7,7 @@ When playback starts in Plex, the controller pauses Unmanic workers. When playba
 ## What You Connect
 
 - Plex: add the controller webhook URL in Plex settings and/or connect to a plex instance API.
+- Jellyfin/Emby: optionally connect to server session APIs.
 - Unmanic: configure the Unmanic URL and optional credentials in the controller web UI.
 - Server: run the container with Docker Compose on Unraid, Linux, Windows, or any Docker host.
 
@@ -104,6 +105,19 @@ Add each Plex server with:
 - A Plex token for that server.
 
 The controller polls `/status/sessions` on each enabled Plex server. If any server has active playback, Unmanic workers are paused. When all monitored servers stop active playback, the normal resume timer is scheduled.
+
+## Jellyfin / Emby Session Monitor
+
+Jellyfin and Emby can be monitored in the same way from Settings.
+
+Add each server with:
+
+- Server type: `Jellyfin` or `Emby`.
+- A friendly name, such as `JellyfinServer` or `Shared`.
+- The server URL, such as `http://YOUR_JELLYFIN_HOST:8096` or `http://YOUR_EMBY_HOST:8096`.
+- An API key for that server.
+
+The controller polls `/Sessions` on each enabled Jellyfin/Emby server. If any configured Plex, Jellyfin, or Emby server has active playback, Unmanic workers stay paused. The resume timer only starts once all monitored servers are idle.
 
 ## Unraid
 
