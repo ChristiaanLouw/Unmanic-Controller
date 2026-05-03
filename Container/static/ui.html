@@ -117,7 +117,8 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
     <input id="unmanic_username">
 
     <label>Unmanic Password</label>
-    <input id="unmanic_password">
+    <input id="unmanic_password" type="password">
+    <button onclick="toggleUnmanicPassword()">Display Password</button>
 
     <label>Resume Delay (seconds)</label>
     <input id="startup_delay" type="number" min="60" max="600">
@@ -310,6 +311,10 @@ async function init(){
 
 function showUIPassword(){
   ui_password_display.value=currentUIPassword
+}
+
+function toggleUnmanicPassword(){
+  unmanic_password.type=unmanic_password.type==='password'?'text':'password'
 }
 
 function webhookUrl(key){
