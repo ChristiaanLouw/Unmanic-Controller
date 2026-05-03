@@ -111,7 +111,7 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
     <h3>Unmanic Settings</h3>
 
     <label>Unmanic URL</label>
-    <input id="unmanic_url">
+    <input id="unmanic_url" placeholder="http://YOUR_UNMANIC_HOST:8888">
 
     <label>Unmanic Username</label>
     <input id="unmanic_username">
@@ -120,7 +120,8 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
     <input id="unmanic_password">
 
     <label>Resume Delay (seconds)</label>
-    <input id="startup_delay" type="number">
+    <input id="startup_delay" type="number" min="60" max="600">
+    <div class="desc">Allowed range: 60-600 seconds.</div>
 
     <div style="margin-top:12px">
       <label>
@@ -148,10 +149,10 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
     <input id="plex_poll_interval" type="number" min="5">
 
     <label>Plex Name</label>
-    <input id="plex_server_name" placeholder="LouwPlex">
+    <input id="plex_server_name" placeholder="PlexServer">
 
     <label>Plex URL</label>
-    <input id="plex_server_url" placeholder="http://192.168.1.10:32400">
+    <input id="plex_server_url" placeholder="http://YOUR_PLEX_HOST:32400">
 
     <label>Plex Token</label>
     <input id="plex_server_token" type="password">
@@ -167,7 +168,7 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
   <div class="card">
     <h3>Plex Webhook API Keys</h3>
     <label>Key Name</label>
-    <input id="webhook_key_name" placeholder="LouwPlex">
+    <input id="webhook_key_name" placeholder="PlexUser">
     <button onclick="createWebhookKey()">Generate Key</button>
     <div class="desc" style="margin-top:10px">If no keys exist, webhooks are accepted without a key. Once a key exists, Plex webhook URLs must include one.</div>
     <div id="webhookKeys" style="margin-top:12px"></div>
@@ -178,11 +179,12 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
     <h3>Web UI Credentials</h3>
 
     <label>Current UI Username</label>
-    <input id="ui_username" class="readonly" readonly>
+    <input id="ui_username">
 
     <label>Current UI Password</label>
     <input id="ui_password_display" class="readonly" readonly>
     <button onclick="showUIPassword()">Display Password</button>
+    <button onclick="saveUIUsername()" style="margin-left:8px">Save Username</button>
 
     <hr style="margin:16px 0;border:1px solid #333">
 
@@ -245,6 +247,15 @@ async function login(){
     loginOverlay.style.display='none'
     init()
   }else loginError.classList.remove('hidden')
+}
+
+loginUser.addEventListener('keydown',e=>{if(e.key==='Enter') loginPass.focus()})
+loginPass.addEventListener('keydown',e=>{if(e.key==='Enter') login()})
+
+function clampNumber(value,min,max){
+  const n=Number(value)
+  if(!Number.isFinite(n)) return min
+  return Math.max(min,Math.min(max,n))
 }
 
 async function logout(){
@@ -494,6 +505,8 @@ async function loadPlexMonitorStatus(){
 }
 
 async function saveUnmanicSettings(){
+  startup_delay.value=clampNumber(startup_delay.value,60,600)
+  plex_poll_interval.value=Math.max(5,Number(plex_poll_interval.value)||10)
   await apiFetch('/api/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -517,21 +530,44 @@ async function saveUIPassword(){
     pwError.classList.remove('hidden')
     return
   }
+  if(!ui_username.value.trim()){
+    toast('error','Enter a UI username')
+    return
+  }
+  if(!ui_password_new.value){
+    toast('error','Enter a new password')
+    return
+  }
 
   await apiFetch('/api/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      ui_username:ui_username.value,
+      ui_username:ui_username.value.trim(),
       ui_password:ui_password_new.value
     })
   })
 
   currentUIPassword=ui_password_new.value
+  ui_username.value=ui_username.value.trim()
   ui_password_display.value=''
   ui_password_new.value=''
   ui_password_confirm.value=''
   toast('success','Password changed')
+}
+
+async function saveUIUsername(){
+  if(!ui_username.value.trim()){
+    toast('error','Enter a UI username')
+    return
+  }
+  await apiFetch('/api/settings',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ui_username:ui_username.value.trim()})
+  })
+  ui_username.value=ui_username.value.trim()
+  toast('success','Username saved')
 }
 
 async function loadWorkers(){

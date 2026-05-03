@@ -70,6 +70,8 @@ SECRET_KEY=replace-with-a-long-random-string
 
 Edit `data/settings.json` directly, or log into the web UI and use the Settings page.
 
+Resume delay is limited to 60-600 seconds.
+
 Default web UI login from `settings.example.json`:
 
 ```text
@@ -80,7 +82,7 @@ Change it after first login.
 
 ## Plex Webhook Keys
 
-In the web UI, open Settings and generate a named Plex webhook API key for each Plex instance, such as `LouwPlex` or `Shared`.
+In the web UI, open Settings and generate a named Plex webhook API key for each Plex instance or user, such as `PlexUser` or `Shared`.
 
 Use the generated URL as that Plex server's webhook URL:
 
@@ -96,8 +98,8 @@ For a central setup that does not require every Plex user to configure webhooks 
 
 Add each Plex server with:
 
-- A friendly name, such as `LouwPlex` or `Shared`.
-- The Plex server URL, such as `http://192.168.1.10:32400`.
+- A friendly name, such as `PlexServer` or `Shared`.
+- The Plex server URL, such as `http://YOUR_PLEX_HOST:32400`.
 - A Plex token for that server.
 
 The controller polls `/status/sessions` on each enabled Plex server. If any server has active playback, Unmanic workers are paused. When all monitored servers stop active playback, the normal resume timer is scheduled.

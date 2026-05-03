@@ -47,6 +47,8 @@ DEFAULTS = {
     "plex_poll_interval": 10,
     "plex_servers": []
 }
+MIN_RESUME_DELAY = 60
+MAX_RESUME_DELAY = 600
 
 # ================= SETTINGS =================
 def load_settings():
@@ -66,8 +68,12 @@ def load_settings():
         data["auto_resume_enabled"] = data["auto_start_timer"]
     for k, v in DEFAULTS.items():
         data.setdefault(k, v)
+    data["startup_delay"] = clamp_resume_delay(data.get("startup_delay", DEFAULTS["startup_delay"]))
     save_settings(data)
     return data
+
+def clamp_resume_delay(value):
+    return max(MIN_RESUME_DELAY, min(MAX_RESUME_DELAY, int(value)))
 
 def save_settings(s):
     with open(CONFIG_PATH, "w") as f:
@@ -438,8 +444,10 @@ def api_settings():
         for key, value in updates.items():
             if key not in allowed:
                 continue
-            if key in {"startup_delay", "plex_poll_interval"}:
-                value = max(0, int(value))
+            if key == "startup_delay":
+                value = clamp_resume_delay(value)
+            elif key == "plex_poll_interval":
+                value = max(5, int(value))
             settings[key] = value
         if "auto_start_timer" in updates:
             settings["auto_resume_enabled"] = bool(settings["auto_start_timer"])
