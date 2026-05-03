@@ -19,15 +19,16 @@ When playback starts in Plex, the controller pauses Unmanic workers. When playba
 - `Dockerfile` and `requirements.txt` - reusable Python runtime image.
 - `Container/controller.py` - web UI, Plex webhook listener, and Unmanic API control.
 - `Container/settings.example.json` - safe template for runtime settings.
-- `Container/settings.json` - safe default runtime settings.
 - `Container/static/ui.html` - web UI.
-- `Container/logs/` - local API and webhook logs, ignored by Git.
+- `data/settings.json` - persistent runtime settings, ignored by Git.
+- `data/logs/` - persistent API and webhook logs, ignored by Git.
 
 ## Quick Start
 
 ```sh
 cp .env.example .env
-cp Container/settings.example.json Container/settings.json
+mkdir -p data
+cp Container/settings.example.json data/settings.json
 docker compose up -d --build
 ```
 
@@ -67,7 +68,7 @@ WEBHOOK_PORT=9777
 SECRET_KEY=replace-with-a-long-random-string
 ```
 
-Edit `Container/settings.json` directly, or log into the web UI and use the Settings page.
+Edit `data/settings.json` directly, or log into the web UI and use the Settings page.
 
 Default web UI login from `settings.example.json`:
 

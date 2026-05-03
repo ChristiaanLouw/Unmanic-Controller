@@ -1,5 +1,6 @@
 Container/logs/*
 Container/controller_bak.py
+data/
 __pycache__/
 *.pyc
 .git/

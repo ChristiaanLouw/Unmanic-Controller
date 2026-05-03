@@ -9,8 +9,23 @@ cd /mnt/user/appdata
 git clone https://github.com/YOUR-USER/Unmanic-Controller.git
 cd Unmanic-Controller
 cp .env.example .env
-cp Container/settings.example.json Container/settings.json
+mkdir -p data
+cp Container/settings.example.json data/settings.json
 docker compose up -d --build
+```
+
+## Updating from older versions
+
+Older versions stored runtime settings in `Container/settings.json`, which could be overwritten by source updates. This version stores runtime settings in `data/settings.json`.
+
+Before updating, migrate existing settings once:
+
+```sh
+cd /mnt/user/appdata/Unmanic-Controller
+mkdir -p data
+if [ -f Container/settings.json ] && [ ! -f data/settings.json ]; then cp Container/settings.json data/settings.json; fi
+docker compose pull
+docker compose up -d
 ```
 
 Once the Docker Hub image is published, use this instead:
@@ -26,7 +41,7 @@ If Unraid does not show the WebUI menu or icon after an update, recreate the con
 docker compose up -d --force-recreate
 ```
 
-If Unraid still does not refresh the WebUI/icon metadata, remove the container and recreate it from Compose. Your settings and logs live in `Container/`, so removing the container does not delete the app configuration.
+If Unraid still does not refresh the WebUI/icon metadata, remove the container and recreate it from Compose. Your settings and logs live in `data/`, so removing the container does not delete the app configuration.
 
 Open the web UI on:
 
