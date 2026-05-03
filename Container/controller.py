@@ -127,6 +127,15 @@ def get_workers():
         return r.json().get("workers_status", [])
     return []
 
+def test_unmanic_connection():
+    r = api_call("GET", "/unmanic/api/v2/workers/status")
+    if r and r.ok:
+        workers = r.json().get("workers_status", [])
+        return {"ok": True, "message": f"Connected. {len(workers)} workers found."}
+    if r is not None:
+        return {"ok": False, "message": f"HTTP {r.status_code}"}
+    return {"ok": False, "message": "Connection failed"}
+
 def pause_all():
     log(WEBHOOK_LOG, "[SUCCESS] Pause all workers")
     r = api_call("POST", "/unmanic/api/v2/workers/worker/pause/all")
@@ -202,6 +211,14 @@ def plex_sessions(server):
             "total": 0,
             "error": str(e)
         }
+
+def test_plex_connection(server):
+    result = plex_sessions(server)
+    if result["ok"]:
+        result["message"] = f"Connected. {result['total']} active sessions."
+    else:
+        result["message"] = result["error"]
+    return result
 
 def poll_plex_servers():
     enabled = bool(settings.get("plex_monitor_enabled"))
@@ -390,6 +407,12 @@ def api_workers():
         return jsonify({"error": "unauthorized"}), 401
     return jsonify(get_workers())
 
+@app.route("/api/test/unmanic", methods=["POST"])
+def api_test_unmanic():
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify(test_unmanic_connection())
+
 @app.route("/api/settings", methods=["GET", "POST"])
 def api_settings():
     global settings
@@ -468,6 +491,19 @@ def api_delete_plex_server(server_id):
     ]
     save_current_settings()
     return jsonify({"success": True})
+
+@app.route("/api/plex-servers/<server_id>/test", methods=["POST"])
+def api_test_plex_server(server_id):
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    server = next(
+        (item for item in settings.get("plex_servers", []) if item.get("id") == server_id),
+        None
+    )
+    if not server:
+        return jsonify({"ok": False, "message": "Plex server not found"}), 404
+    return jsonify(test_plex_connection(server))
 
 @app.route("/api/plex-monitor/status")
 def api_plex_monitor_status():

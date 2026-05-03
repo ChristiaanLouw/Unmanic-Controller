@@ -11,14 +11,16 @@ header{background:#1e1e1e;padding:16px;display:flex;align-items:center;gap:12px}
 header img{height:32px}
 main{display:flex;height:calc(100vh - 64px)}
 .left{flex:2;padding:20px;overflow:auto}
-.right{flex:1;padding:20px;background:#0f0f0f;overflow:auto}
+.right{flex:1;padding:14px;background:#0f0f0f;overflow:auto}
 .card{background:#1e1e1e;border-radius:8px;padding:16px;margin-bottom:20px}
+.right .card{padding:12px;margin-bottom:12px}
 label{font-weight:bold}
 .desc{font-size:12px;color:#aaa;margin-bottom:6px}
 input{width:100%;padding:8px;margin-bottom:12px;background:#2c2c2c;border:none;color:#fff}
 input[type="checkbox"]{width:auto;margin-right:8px}
 button{background:#2c2c2c;color:#fff;border:none;padding:6px 12px;cursor:pointer}
-pre{max-height:400px;overflow:auto;white-space:pre-wrap}
+pre{max-height:260px;overflow:auto;white-space:pre-wrap}
+.right h3{margin-top:0}
 .keyRow{border-top:1px solid #333;padding:12px 0}
 .keyUrl{font-family:monospace;font-size:12px;word-break:break-all;color:#ccc;margin:6px 0}
 .statusLine{font-size:13px;color:#ccc;margin:6px 0}
@@ -129,6 +131,7 @@ pre{max-height:400px;overflow:auto;white-space:pre-wrap}
 
     <div style="margin-top:20px">
       <button onclick="saveUnmanicSettings()">Save Settings</button>
+      <button onclick="testUnmanic()" style="margin-left:8px">Test Unmanic</button>
     </div>
   </div>
 
@@ -198,6 +201,7 @@ pre{max-height:400px;overflow:auto;white-space:pre-wrap}
 </div>
 
 <div class="right">
+  <div class="card"><h3>Plex Monitor</h3><div id="homePlexMonitorStatus"></div></div>
   <div class="card"><h3>API Log</h3><pre id="apiLog"></pre></div>
   <div class="card"><h3>Webhook Log</h3><pre id="webhookLog"></pre></div>
 </div>
@@ -384,6 +388,11 @@ async function deleteWebhookKey(key){
   loadWebhookKeys()
 }
 
+async function testUnmanic(){
+  const result=await apiFetch('/api/test/unmanic',{method:'POST'}).then(r=>r.json())
+  toast(result.ok?'success':'error', result.message)
+}
+
 function renderPlexServers(servers){
   plexServers.innerHTML=''
   if(!servers.length){
@@ -411,7 +420,13 @@ function renderPlexServers(servers){
 
     const del=document.createElement('button')
     del.textContent='Delete'
+    const test=document.createElement('button')
+    test.textContent='Test'
+    test.onclick=()=>testPlexServer(s.id)
+    row.appendChild(test)
+
     del.onclick=()=>deletePlexServer(s.id)
+    del.style.marginLeft='8px'
     row.appendChild(del)
 
     plexServers.appendChild(row)
@@ -451,18 +466,26 @@ async function deletePlexServer(id){
   loadPlexMonitorStatus()
 }
 
+async function testPlexServer(id){
+  const result=await apiFetch('/api/plex-servers/'+encodeURIComponent(id)+'/test',{method:'POST'}).then(r=>r.json())
+  toast(result.ok?'success':'error', result.message)
+  loadPlexMonitorStatus()
+}
+
 function renderPlexMonitorStatus(s){
   const active=s.active?'Active playback detected':'No active playback'
   const rows=(s.servers||[]).map(x=>{
     if(!x.ok) return `<div class="statusLine"><b>${x.name}</b>: ERROR ${x.error}</div>`
     return `<div class="statusLine"><b>${x.name}</b>: ${x.playing} playing, ${x.paused} paused, ${x.total} total</div>`
   }).join('')
-  plexMonitorStatus.innerHTML=`
+  const html=`
     <div class="statusLine"><b>Monitor:</b> ${s.enabled?'Enabled':'Disabled'}</div>
     <div class="statusLine"><b>Status:</b> ${active}</div>
     <div class="statusLine"><b>Last check:</b> ${s.last_check||'Never'}</div>
     ${rows||'<div class="statusLine">No enabled Plex servers with tokens configured</div>'}
   `
+  plexMonitorStatus.innerHTML=html
+  homePlexMonitorStatus.innerHTML=html
 }
 
 async function loadPlexMonitorStatus(){
