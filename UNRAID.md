@@ -18,7 +18,7 @@ docker compose up -d --build
 
 Older versions stored runtime settings in `Container/settings.json`, which could be overwritten by source updates. This version stores runtime settings in `data/settings.json`.
 
-Before updating, migrate existing settings once:
+Before updating, migrate existing settings once if they still exist:
 
 ```sh
 cd /mnt/user/appdata/Unmanic-Controller
@@ -27,6 +27,8 @@ if [ -f Container/settings.json ] && [ ! -f data/settings.json ]; then cp Contai
 docker compose pull
 docker compose up -d
 ```
+
+The container also mounts `Container/` read-only as a legacy settings source. If `data/settings.json` is missing or looks like a fresh default reset, the app will try to recover from `Container/settings.json` or `data/settings.backup.json`.
 
 Once the Docker Hub image is published, use this instead:
 

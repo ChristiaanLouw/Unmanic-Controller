@@ -21,6 +21,7 @@ When playback starts in Plex, the controller pauses Unmanic workers. When playba
 - `Container/settings.example.json` - safe template for runtime settings.
 - `Container/static/ui.html` - web UI.
 - `data/settings.json` - persistent runtime settings, ignored by Git.
+- `data/settings.backup.json` - automatic backup of customized runtime settings, ignored by Git.
 - `data/logs/` - persistent API and webhook logs, ignored by Git.
 
 ## Quick Start

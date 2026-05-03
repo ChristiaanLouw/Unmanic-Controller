@@ -19,6 +19,11 @@ APP_STATIC_PATH = f"{APP_DIR}/static"
 LOG_PATH = f"{BASE_DIR}/logs"
 
 CONFIG_PATH = f"{BASE_DIR}/settings.json"
+BACKUP_CONFIG_PATH = f"{BASE_DIR}/settings.backup.json"
+LEGACY_CONFIG_PATHS = (
+    "/legacy-appdata/settings.json",
+    f"{BASE_DIR}/Container/settings.json",
+)
 DEFAULT_CONFIG_PATH = f"{APP_DIR}/default-settings.json"
 API_LOG = f"{LOG_PATH}/api.log"
 WEBHOOK_LOG = f"{LOG_PATH}/webhook.log"
@@ -51,15 +56,50 @@ MIN_RESUME_DELAY = 60
 MAX_RESUME_DELAY = 600
 
 # ================= SETTINGS =================
-def load_settings():
-    if not os.path.exists(CONFIG_PATH):
-        defaults = dict(DEFAULTS)
-        if os.path.exists(DEFAULT_CONFIG_PATH):
-            with open(DEFAULT_CONFIG_PATH) as f:
-                defaults.update(json.load(f))
-        save_settings(defaults)
-    with open(CONFIG_PATH) as f:
-        data = json.load(f)
+def read_json(path):
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+def has_custom_settings(data):
+    if not data:
+        return False
+    if data.get("ui_username") not in {"", "admin", None}:
+        return True
+    if data.get("ui_password") not in {"", "admin", None}:
+        return True
+    if data.get("unmanic_url") not in {"", "http://localhost:8888", None}:
+        return True
+    if data.get("startup_delay") not in {DEFAULTS["startup_delay"], None}:
+        return True
+    if data.get("plex_poll_interval") not in {DEFAULTS["plex_poll_interval"], None}:
+        return True
+    if data.get("plex_monitor_enabled"):
+        return True
+    if data.get("auto_start_timer") != DEFAULTS["auto_start_timer"]:
+        return True
+    checks = (
+        "plex_url",
+        "plex_token",
+        "unmanic_username",
+        "unmanic_password",
+        "webhook_keys",
+        "plex_servers",
+    )
+    return any(bool(data.get(key)) for key in checks)
+
+def default_settings():
+    data = dict(DEFAULTS)
+    defaults = read_json(DEFAULT_CONFIG_PATH)
+    if defaults:
+        data.update(defaults)
+    return data
+
+def normalize_settings(data):
     if "username" in data and "unmanic_username" not in data:
         data["unmanic_username"] = data["username"]
     if "password" in data and "unmanic_password" not in data:
@@ -69,6 +109,22 @@ def load_settings():
     for k, v in DEFAULTS.items():
         data.setdefault(k, v)
     data["startup_delay"] = clamp_resume_delay(data.get("startup_delay", DEFAULTS["startup_delay"]))
+    return data
+
+def load_settings():
+    data = read_json(CONFIG_PATH)
+    backup = read_json(BACKUP_CONFIG_PATH)
+    legacy = next(
+        (item for item in (read_json(path) for path in LEGACY_CONFIG_PATHS) if has_custom_settings(item)),
+        None
+    )
+
+    if data is None:
+        data = legacy or backup or default_settings()
+    elif not has_custom_settings(data):
+        data = legacy or (backup if has_custom_settings(backup) else data)
+
+    data = normalize_settings(data)
     save_settings(data)
     return data
 
@@ -76,8 +132,12 @@ def clamp_resume_delay(value):
     return max(MIN_RESUME_DELAY, min(MAX_RESUME_DELAY, int(value)))
 
 def save_settings(s):
+    os.makedirs(BASE_DIR, exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
         json.dump(s, f, indent=2)
+    if has_custom_settings(s):
+        with open(BACKUP_CONFIG_PATH, "w") as f:
+            json.dump(s, f, indent=2)
 
 settings = load_settings()
 
