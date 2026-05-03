@@ -10,6 +10,7 @@ from requests.auth import HTTPBasicAuth
 from collections import deque
 from urllib.parse import parse_qs, urlparse
 import xml.etree.ElementTree as ET
+import ipaddress
 
 # ================= PATHS =================
 BASE_DIR = "/appdata"
@@ -20,7 +21,14 @@ LOG_PATH = f"{BASE_DIR}/logs"
 
 CONFIG_PATH = f"{BASE_DIR}/settings.json"
 BACKUP_CONFIG_PATH = f"{BASE_DIR}/settings.backup.json"
+LEGACY_BACKUP_CONFIG_PATH = "/legacy-appdata/settings.backup.json"
 LEGACY_CONFIG_PATHS = (
+    "/legacy-appdata/settings.json",
+    f"{BASE_DIR}/Container/settings.json",
+)
+RECOVERY_CONFIG_PATHS = (
+    BACKUP_CONFIG_PATH,
+    LEGACY_BACKUP_CONFIG_PATH,
     "/legacy-appdata/settings.json",
     f"{BASE_DIR}/Container/settings.json",
 )
@@ -52,7 +60,9 @@ DEFAULTS = {
     "plex_poll_interval": 10,
     "plex_servers": [],
     "media_monitor_enabled": False,
-    "media_servers": []
+    "media_servers": [],
+    "auth_bypass_enabled": False,
+    "auth_bypass_ranges": []
 }
 MIN_RESUME_DELAY = 60
 MAX_RESUME_DELAY = 600
@@ -92,6 +102,7 @@ def has_custom_settings(data):
         "webhook_keys",
         "plex_servers",
         "media_servers",
+        "auth_bypass_ranges",
     )
     return any(bool(data.get(key)) for key in checks)
 
@@ -116,16 +127,15 @@ def normalize_settings(data):
 
 def load_settings():
     data = read_json(CONFIG_PATH)
-    backup = read_json(BACKUP_CONFIG_PATH)
-    legacy = next(
-        (item for item in (read_json(path) for path in LEGACY_CONFIG_PATHS) if has_custom_settings(item)),
+    recovery = next(
+        (item for item in (read_json(path) for path in RECOVERY_CONFIG_PATHS) if has_custom_settings(item)),
         None
     )
 
     if data is None:
-        data = legacy or backup or default_settings()
+        data = recovery or default_settings()
     elif not has_custom_settings(data):
-        data = legacy or (backup if has_custom_settings(backup) else data)
+        data = recovery or data
 
     data = normalize_settings(data)
     save_settings(data)
@@ -139,13 +149,49 @@ def save_settings(s):
     with open(CONFIG_PATH, "w") as f:
         json.dump(s, f, indent=2)
     if has_custom_settings(s):
-        with open(BACKUP_CONFIG_PATH, "w") as f:
-            json.dump(s, f, indent=2)
+        for path in (BACKUP_CONFIG_PATH, LEGACY_BACKUP_CONFIG_PATH):
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as f:
+                    json.dump(s, f, indent=2)
+            except Exception:
+                pass
 
 settings = load_settings()
 
 def save_current_settings():
     save_settings(settings)
+
+def valid_ip_range(value):
+    value = str(value).strip()
+    try:
+        if "/" in value:
+            ipaddress.ip_network(value, strict=False)
+        else:
+            ipaddress.ip_address(value)
+        return value
+    except ValueError:
+        return None
+
+def client_ip_allowed():
+    if not settings.get("auth_bypass_enabled"):
+        return False
+    remote = request.remote_addr
+    if not remote:
+        return False
+    try:
+        ip = ipaddress.ip_address(remote)
+    except ValueError:
+        return False
+    for item in settings.get("auth_bypass_ranges", []):
+        try:
+            if "/" in item and ip in ipaddress.ip_network(item, strict=False):
+                return True
+            if "/" not in item and ip == ipaddress.ip_address(item):
+                return True
+        except ValueError:
+            continue
+    return False
 
 # ================= LOGGING =================
 def rotate_log(path, max_lines=1000):
@@ -499,6 +545,8 @@ app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 CORS(app)
 
 def require_auth():
+    if client_ip_allowed():
+        return False
     return not session.get("auth")
 
 def static_file(name):
@@ -541,7 +589,11 @@ def logout():
 
 @app.route("/api/session")
 def api_session():
-    return jsonify({"authenticated": bool(session.get("auth"))})
+    bypassed = client_ip_allowed()
+    return jsonify({
+        "authenticated": bool(session.get("auth") or bypassed),
+        "auth_bypassed": bypassed
+    })
 
 @app.route("/api/workers")
 def api_workers():
@@ -577,6 +629,7 @@ def api_settings():
             "plex_monitor_enabled",
             "plex_poll_interval",
             "media_monitor_enabled",
+            "auth_bypass_enabled",
         }
         for key, value in updates.items():
             if key not in allowed:
@@ -598,6 +651,36 @@ def api_settings():
     data["auto_resume_enabled"] = bool(data.get("auto_resume_enabled", data["auto_start_timer"]))
     data["webhook_port"] = WEBHOOK_PORT
     return jsonify(data)
+
+@app.route("/api/auth-bypass", methods=["GET", "POST"])
+def api_auth_bypass():
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    settings.setdefault("auth_bypass_ranges", [])
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        value = valid_ip_range(data.get("value", ""))
+        if not value:
+            return jsonify({"error": "valid IP or CIDR block required"}), 400
+        if value not in settings["auth_bypass_ranges"]:
+            settings["auth_bypass_ranges"].append(value)
+            save_current_settings()
+        return jsonify({"value": value}), 201
+
+    return jsonify(settings["auth_bypass_ranges"])
+
+@app.route("/api/auth-bypass/<path:value>", methods=["DELETE"])
+def api_delete_auth_bypass(value):
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    settings["auth_bypass_ranges"] = [
+        item for item in settings.get("auth_bypass_ranges", [])
+        if item != value
+    ]
+    save_current_settings()
+    return jsonify({"success": True})
 
 @app.route("/api/plex-servers", methods=["GET", "POST"])
 def api_plex_servers():
@@ -636,6 +719,29 @@ def api_delete_plex_server(server_id):
     ]
     save_current_settings()
     return jsonify({"success": True})
+
+@app.route("/api/plex-servers/<server_id>", methods=["PUT"])
+def api_update_plex_server(server_id):
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    server = next(
+        (item for item in settings.get("plex_servers", []) if item.get("id") == server_id),
+        None
+    )
+    if not server:
+        return jsonify({"error": "Plex server not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    for key in ("name", "url", "token"):
+        if key in data:
+            server[key] = str(data.get(key, "")).strip()
+    if "enabled" in data:
+        server["enabled"] = bool(data["enabled"])
+    if not server.get("name") or not server.get("url") or not server.get("token"):
+        return jsonify({"error": "name, url, and token required"}), 400
+    save_current_settings()
+    return jsonify(server)
 
 @app.route("/api/plex-servers/<server_id>/test", methods=["POST"])
 def api_test_plex_server(server_id):

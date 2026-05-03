@@ -1,6 +1,7 @@
 Container/logs/*
 Container/controller_bak.py
 Container/settings.json
+Container/settings.backup.json
 data/
 __pycache__/
 *.pyc

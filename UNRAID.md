@@ -28,7 +28,7 @@ docker compose pull
 docker compose up -d
 ```
 
-The container also mounts `Container/` read-only as a legacy settings source. If `data/settings.json` is missing or looks like a fresh default reset, the app will try to recover from `Container/settings.json` or `data/settings.backup.json`.
+The container also mounts `Container/` as a legacy settings and backup location. If `data/settings.json` is missing or looks like a fresh default reset, the app will try to recover from `Container/settings.json`, `data/settings.backup.json`, or `Container/settings.backup.json`.
 
 Once the Docker Hub image is published, use this instead:
 
@@ -60,6 +60,8 @@ http://YOUR_UNRAID_SERVER_IP:9777
 Alternatively, use Plex Session Monitor from the web UI Settings page. Add each Plex instance once with its server URL and token, then the controller will monitor playback centrally without per-user Plex webhooks.
 
 Jellyfin and Emby can also be monitored from the Settings page using each server's URL and API key.
+
+The web UI also supports optional authentication bypass for trusted LAN IPs or CIDR blocks.
 
 ## Optional custom network with static IP
 

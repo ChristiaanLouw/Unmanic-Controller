@@ -8,7 +8,7 @@ services:
       - "${WEBHOOK_PORT:-9777}:${WEBHOOK_PORT:-9777}"
     volumes:
       - ./data:/appdata
-      - ./Container:/legacy-appdata:ro
+      - ./Container:/legacy-appdata
     environment:
       TZ: ${TZ:-UTC}
       WEB_PORT: ${WEB_PORT:-8080}

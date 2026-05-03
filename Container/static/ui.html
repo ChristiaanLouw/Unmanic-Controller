@@ -158,7 +158,8 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
     <label>Plex Token</label>
     <input id="plex_server_token" type="password">
 
-    <button onclick="createPlexServer()">Add Plex Server</button>
+    <button id="plex_server_save_btn" onclick="savePlexServer()">Add Plex Server</button>
+    <button id="plex_server_cancel_btn" class="hidden" onclick="cancelPlexEdit()" style="margin-left:8px">Cancel Edit</button>
     <button onclick="saveUnmanicSettings()" style="margin-left:8px">Save Monitor Settings</button>
 
     <div class="desc" style="margin-top:10px">This monitors server sessions with one Plex server token and does not require Plex Pass or per-user webhooks.</div>
@@ -173,6 +174,24 @@ pre{max-height:260px;overflow:auto;white-space:pre-wrap}
     <button onclick="createWebhookKey()">Generate Key</button>
     <div class="desc" style="margin-top:10px">If no keys exist, webhooks are accepted without a key. Once a key exists, Plex webhook URLs must include one.</div>
     <div id="webhookKeys" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <h3>Authentication Bypass</h3>
+    <div style="margin-top:12px">
+      <label>
+        <input type="checkbox" id="auth_bypass_enabled">
+        Bypass web UI login for listed IPs or CIDR blocks
+      </label>
+    </div>
+
+    <label>IP or CIDR Block</label>
+    <input id="auth_bypass_value" placeholder="192.168.1.10 or 192.168.1.0/24">
+    <button onclick="addAuthBypass()">Add IP / Block</button>
+    <button onclick="saveUnmanicSettings()" style="margin-left:8px">Save Auth Setting</button>
+
+    <div class="desc" style="margin-top:10px">Use this only for trusted LAN addresses.</div>
+    <div id="authBypassList" style="margin-top:12px"></div>
   </div>
 
   <div class="card">
@@ -263,6 +282,7 @@ let authenticated=false
 let currentUIPassword=''
 let initialized=false
 let webhookPort='9777'
+let editingPlexServerId=''
 
 function showTab(t){
   home.classList.add('hidden')
@@ -330,6 +350,7 @@ async function init(){
   auto_start_timer.checked=s.auto_start_timer
   plex_monitor_enabled.checked=!!s.plex_monitor_enabled
   media_monitor_enabled.checked=!!s.media_monitor_enabled
+  auth_bypass_enabled.checked=!!s.auth_bypass_enabled
   plex_poll_interval.value=s.plex_poll_interval||10
   ui_username.value=s.ui_username
   currentUIPassword=s.ui_password
@@ -339,6 +360,7 @@ async function init(){
   loadLogs()
   loadWebhookKeys()
   loadPlexServers()
+  loadAuthBypass()
   loadMediaServers()
   loadPlexMonitorStatus()
   updateTimer()
@@ -439,6 +461,62 @@ async function deleteWebhookKey(key){
   loadWebhookKeys()
 }
 
+function renderAuthBypass(values){
+  authBypassList.innerHTML=''
+  if(!values.length){
+    authBypassList.innerHTML='<i>No auth bypass entries added</i>'
+    return
+  }
+  values.forEach(value=>{
+    const row=document.createElement('div')
+    row.className='keyRow'
+
+    const text=document.createElement('div')
+    text.className='keyUrl'
+    text.textContent=value
+    row.appendChild(text)
+
+    const del=document.createElement('button')
+    del.textContent='Delete'
+    del.onclick=()=>deleteAuthBypass(value)
+    row.appendChild(del)
+
+    authBypassList.appendChild(row)
+  })
+}
+
+async function loadAuthBypass(){
+  const values=await apiFetch('/api/auth-bypass').then(r=>r.json())
+  renderAuthBypass(values)
+}
+
+async function addAuthBypass(){
+  const value=auth_bypass_value.value.trim()
+  if(!value){
+    toast('error','Enter an IP or CIDR block')
+    return
+  }
+  const r=await apiFetch('/api/auth-bypass',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({value})
+  })
+  const data=await r.json()
+  if(!r.ok){
+    toast('error',data.error||'Invalid IP or CIDR block')
+    return
+  }
+  auth_bypass_value.value=''
+  toast('success','Auth bypass entry added')
+  loadAuthBypass()
+}
+
+async function deleteAuthBypass(value){
+  await apiFetch('/api/auth-bypass/'+encodeURIComponent(value),{method:'DELETE'})
+  toast('success','Auth bypass entry deleted')
+  loadAuthBypass()
+}
+
 async function testUnmanic(){
   const result=await apiFetch('/api/test/unmanic',{method:'POST'}).then(r=>r.json())
   toast(result.ok?'success':'error', result.message)
@@ -469,13 +547,19 @@ function renderPlexServers(servers){
     state.textContent=s.enabled?'Enabled':'Disabled'
     row.appendChild(state)
 
-    const del=document.createElement('button')
-    del.textContent='Delete'
     const test=document.createElement('button')
     test.textContent='Test'
     test.onclick=()=>testPlexServer(s.id)
     row.appendChild(test)
 
+    const edit=document.createElement('button')
+    edit.textContent='Edit'
+    edit.style.marginLeft='8px'
+    edit.onclick=()=>editPlexServer(s)
+    row.appendChild(edit)
+
+    const del=document.createElement('button')
+    del.textContent='Delete'
     del.onclick=()=>deletePlexServer(s.id)
     del.style.marginLeft='8px'
     row.appendChild(del)
@@ -489,7 +573,25 @@ async function loadPlexServers(){
   renderPlexServers(servers)
 }
 
-async function createPlexServer(){
+function editPlexServer(server){
+  editingPlexServerId=server.id
+  plex_server_name.value=server.name||''
+  plex_server_url.value=server.url||''
+  plex_server_token.value=server.token||''
+  plex_server_save_btn.textContent='Update Plex Server'
+  plex_server_cancel_btn.classList.remove('hidden')
+}
+
+function cancelPlexEdit(){
+  editingPlexServerId=''
+  plex_server_name.value=''
+  plex_server_url.value=''
+  plex_server_token.value=''
+  plex_server_save_btn.textContent='Add Plex Server'
+  plex_server_cancel_btn.classList.add('hidden')
+}
+
+async function savePlexServer(){
   const name=plex_server_name.value.trim()
   const url=plex_server_url.value.trim()
   const token=plex_server_token.value.trim()
@@ -497,15 +599,13 @@ async function createPlexServer(){
     toast('error','Enter Plex name, URL, and token')
     return
   }
-  await apiFetch('/api/plex-servers',{
-    method:'POST',
+  await apiFetch(editingPlexServerId?'/api/plex-servers/'+encodeURIComponent(editingPlexServerId):'/api/plex-servers',{
+    method:editingPlexServerId?'PUT':'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name,url,token,enabled:true})
   })
-  plex_server_name.value=''
-  plex_server_url.value=''
-  plex_server_token.value=''
-  toast('success','Plex server added')
+  toast('success',editingPlexServerId?'Plex server updated':'Plex server added')
+  cancelPlexEdit()
   loadPlexServers()
   loadPlexMonitorStatus()
 }
@@ -653,6 +753,7 @@ async function saveUnmanicSettings(){
       auto_start_timer:auto_start_timer.checked,
       plex_monitor_enabled:plex_monitor_enabled.checked,
       media_monitor_enabled:media_monitor_enabled.checked,
+      auth_bypass_enabled:auth_bypass_enabled.checked,
       plex_poll_interval:+plex_poll_interval.value
     })
   })

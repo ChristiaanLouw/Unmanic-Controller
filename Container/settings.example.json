@@ -14,5 +14,7 @@
   "plex_poll_interval": 10,
   "plex_servers": [],
   "media_monitor_enabled": false,
-  "media_servers": []
+  "media_servers": [],
+  "auth_bypass_enabled": false,
+  "auth_bypass_ranges": []
 }

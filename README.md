@@ -82,6 +82,17 @@ admin / admin
 
 Change it after first login.
 
+## Authentication Bypass
+
+The Settings page can bypass web UI login for trusted IP addresses or CIDR blocks, such as:
+
+```text
+192.168.1.10
+192.168.1.0/24
+```
+
+Keep this disabled unless the listed addresses are trusted.
+
 ## Plex Webhook Keys
 
 In the web UI, open Settings and generate a named Plex webhook API key for each Plex instance or user, such as `PlexUser` or `Shared`.
