@@ -108,6 +108,14 @@ The controller polls `/status/sessions` on each enabled Plex server. If any serv
 
 See `UNRAID.md` for both the normal bridge install and the optional custom network/static IP setup.
 
+## Acknowledgements
+
+This project is an independent companion controller for [Unmanic](https://docs.unmanic.app/), a free and open-source library optimisation tool.
+
+Unmanic is developed and maintained by the Unmanic project. This controller is not an official Unmanic project and is not affiliated with or endorsed by the Unmanic maintainers.
+
+The project name and visual style reference Unmanic because the controller is designed specifically to work with Unmanic worker pause/resume APIs.
+
 ## Docker Hub Publishing
 
 The GitHub Actions workflow in `.github/workflows/dockerhub.yml` publishes the image to Docker Hub on pushes to `main`, tags like `v1.0.0`, and manual workflow runs.
