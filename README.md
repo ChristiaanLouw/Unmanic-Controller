@@ -6,7 +6,7 @@ When playback starts in Plex, the controller pauses Unmanic workers. When playba
 
 ## What You Connect
 
-- Plex: add the controller webhook URL in Plex settings.
+- Plex: add the controller webhook URL in Plex settings and/or connect to a plex instance API.
 - Unmanic: configure the Unmanic URL and optional credentials in the controller web UI.
 - Server: run the container with Docker Compose on Unraid, Linux, Windows, or any Docker host.
 
