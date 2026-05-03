@@ -9,6 +9,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from collections import deque
 from urllib.parse import parse_qs, urlparse
+import xml.etree.ElementTree as ET
 
 # ================= PATHS =================
 BASE_DIR = "/appdata"
@@ -41,7 +42,10 @@ DEFAULTS = {
     "ui_password": "admin",
     "auto_resume_enabled": True,
     "auto_start_timer": False,
-    "webhook_keys": []
+    "webhook_keys": [],
+    "plex_monitor_enabled": False,
+    "plex_poll_interval": 10,
+    "plex_servers": []
 }
 
 # ================= SETTINGS =================
@@ -148,6 +152,93 @@ def webhook_key_allowed(handler):
 
     return any(item.get("key") == supplied for item in keys)
 
+# ================= PLEX MONITOR =================
+plex_monitor_state = {
+    "enabled": False,
+    "active": False,
+    "last_check": None,
+    "servers": []
+}
+plex_monitor_lock = threading.Lock()
+
+def plex_sessions(server):
+    url = server["url"].rstrip("/") + "/status/sessions"
+    try:
+        r = requests.get(
+            url,
+            params={"X-Plex-Token": server.get("token", "")},
+            timeout=10
+        )
+        r.raise_for_status()
+        root = ET.fromstring(r.text)
+        playing = 0
+        paused = 0
+        total = int(root.attrib.get("size", "0") or 0)
+
+        for item in root:
+            player = item.find("Player")
+            state = (player.attrib.get("state", "") if player is not None else "").lower()
+            if state in {"playing", "buffering"}:
+                playing += 1
+            elif state == "paused":
+                paused += 1
+
+        return {
+            "id": server.get("id"),
+            "name": server.get("name", "Plex"),
+            "ok": True,
+            "playing": playing,
+            "paused": paused,
+            "total": total,
+            "error": ""
+        }
+    except Exception as e:
+        return {
+            "id": server.get("id"),
+            "name": server.get("name", "Plex"),
+            "ok": False,
+            "playing": 0,
+            "paused": 0,
+            "total": 0,
+            "error": str(e)
+        }
+
+def poll_plex_servers():
+    enabled = bool(settings.get("plex_monitor_enabled"))
+    servers = [
+        s for s in settings.get("plex_servers", [])
+        if s.get("enabled", True) and s.get("url") and s.get("token")
+    ]
+
+    results = [plex_sessions(server) for server in servers] if enabled else []
+    active = any(item["playing"] > 0 for item in results if item["ok"])
+
+    with plex_monitor_lock:
+        was_active = plex_monitor_state["active"]
+        plex_monitor_state.update({
+            "enabled": enabled,
+            "active": active,
+            "last_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "servers": results
+        })
+
+    if not enabled or not servers:
+        return
+
+    if active and not was_active:
+        log(WEBHOOK_LOG, "[PLEX MONITOR] Playback detected")
+        cancel_timer()
+        pause_all()
+    elif not active and was_active:
+        log(WEBHOOK_LOG, "[PLEX MONITOR] No active playback")
+        schedule_resume()
+
+def plex_monitor_loop():
+    while True:
+        poll_plex_servers()
+        interval = max(5, int(settings.get("plex_poll_interval", 10) or 10))
+        time.sleep(interval)
+
 # ================= TIMER =================
 generation = 0
 timer_start = None
@@ -252,10 +343,13 @@ def require_auth():
     return not session.get("auth")
 
 def static_file(name):
+    app_path = os.path.join(APP_STATIC_PATH, name)
+    if os.path.exists(app_path):
+        return app_path
     local_path = os.path.join(STATIC_PATH, name)
     if os.path.exists(local_path):
         return local_path
-    return os.path.join(APP_STATIC_PATH, name)
+    return app_path
 
 @app.route("/")
 def index():
@@ -315,11 +409,13 @@ def api_settings():
             "ui_password",
             "auto_resume_enabled",
             "auto_start_timer",
+            "plex_monitor_enabled",
+            "plex_poll_interval",
         }
         for key, value in updates.items():
             if key not in allowed:
                 continue
-            if key == "startup_delay":
+            if key in {"startup_delay", "plex_poll_interval"}:
                 value = max(0, int(value))
             settings[key] = value
         if "auto_start_timer" in updates:
@@ -334,6 +430,51 @@ def api_settings():
     data["auto_resume_enabled"] = bool(data.get("auto_resume_enabled", data["auto_start_timer"]))
     data["webhook_port"] = WEBHOOK_PORT
     return jsonify(data)
+
+@app.route("/api/plex-servers", methods=["GET", "POST"])
+def api_plex_servers():
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    settings.setdefault("plex_servers", [])
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        name = str(data.get("name", "")).strip()
+        url = str(data.get("url", "")).strip()
+        token = str(data.get("token", "")).strip()
+        if not name or not url or not token:
+            return jsonify({"error": "name, url, and token required"}), 400
+        server = {
+            "id": secrets.token_hex(8),
+            "name": name,
+            "url": url,
+            "token": token,
+            "enabled": bool(data.get("enabled", True))
+        }
+        settings["plex_servers"].append(server)
+        save_current_settings()
+        return jsonify(server), 201
+
+    return jsonify(settings["plex_servers"])
+
+@app.route("/api/plex-servers/<server_id>", methods=["DELETE"])
+def api_delete_plex_server(server_id):
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    settings["plex_servers"] = [
+        item for item in settings.get("plex_servers", [])
+        if item.get("id") != server_id
+    ]
+    save_current_settings()
+    return jsonify({"success": True})
+
+@app.route("/api/plex-monitor/status")
+def api_plex_monitor_status():
+    if require_auth():
+        return jsonify({"error": "unauthorized"}), 401
+    with plex_monitor_lock:
+        return jsonify(dict(plex_monitor_state))
 
 @app.route("/api/webhook-keys", methods=["GET", "POST"])
 def api_webhook_keys():
@@ -420,5 +561,7 @@ threading.Thread(
     ).serve_forever(),
     daemon=True
 ).start()
+
+threading.Thread(target=plex_monitor_loop, daemon=True).start()
 
 app.run(host="0.0.0.0", port=WEB_PORT, threaded=True)

@@ -9,5 +9,8 @@
   "ui_password": "admin",
   "auto_start_timer": true,
   "auto_resume_enabled": true,
-  "webhook_keys": []
+  "webhook_keys": [],
+  "plex_monitor_enabled": false,
+  "plex_poll_interval": 10,
+  "plex_servers": []
 }

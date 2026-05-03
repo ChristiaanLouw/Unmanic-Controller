@@ -89,6 +89,18 @@ http://YOUR_DOCKER_HOST:9777/?key=GENERATED_KEY
 
 If no webhook keys exist, webhooks are accepted without a key. Once at least one key exists, incoming Plex webhooks must include a valid key.
 
+## Plex Session Monitor
+
+For a central setup that does not require every Plex user to configure webhooks or have Plex Pass, enable Plex Session Monitor in Settings.
+
+Add each Plex server with:
+
+- A friendly name, such as `LouwPlex` or `Shared`.
+- The Plex server URL, such as `http://192.168.1.10:32400`.
+- A Plex token for that server.
+
+The controller polls `/status/sessions` on each enabled Plex server. If any server has active playback, Unmanic workers are paused. When all monitored servers stop active playback, the normal resume timer is scheduled.
+
 ## Unraid
 
 See `UNRAID.md` for both the normal bridge install and the optional custom network/static IP setup.

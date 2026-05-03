@@ -40,6 +40,8 @@ Add this Plex webhook URL:
 http://YOUR_UNRAID_SERVER_IP:9777
 ```
 
+Alternatively, use Plex Session Monitor from the web UI Settings page. Add each Plex instance once with its server URL and token, then the controller will monitor playback centrally without per-user Plex webhooks.
+
 ## Optional custom network with static IP
 
 Use this only when you want the controller to have its own LAN IP on an existing Unraid custom Docker network.

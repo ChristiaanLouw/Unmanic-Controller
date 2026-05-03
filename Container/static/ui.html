@@ -21,6 +21,7 @@ button{background:#2c2c2c;color:#fff;border:none;padding:6px 12px;cursor:pointer
 pre{max-height:400px;overflow:auto;white-space:pre-wrap}
 .keyRow{border-top:1px solid #333;padding:12px 0}
 .keyUrl{font-family:monospace;font-size:12px;word-break:break-all;color:#ccc;margin:6px 0}
+.statusLine{font-size:13px;color:#ccc;margin:6px 0}
 .hidden{display:none}
 .error{color:#e74c3c}
 .success{color:#2ecc71}
@@ -129,6 +130,35 @@ pre{max-height:400px;overflow:auto;white-space:pre-wrap}
     <div style="margin-top:20px">
       <button onclick="saveUnmanicSettings()">Save Settings</button>
     </div>
+  </div>
+
+  <div class="card">
+    <h3>Plex Session Monitor</h3>
+    <div style="margin-top:12px">
+      <label>
+        <input type="checkbox" id="plex_monitor_enabled">
+        Monitor Plex sessions directly
+      </label>
+    </div>
+
+    <label>Polling Interval (seconds)</label>
+    <input id="plex_poll_interval" type="number" min="5">
+
+    <label>Plex Name</label>
+    <input id="plex_server_name" placeholder="LouwPlex">
+
+    <label>Plex URL</label>
+    <input id="plex_server_url" placeholder="http://192.168.1.10:32400">
+
+    <label>Plex Token</label>
+    <input id="plex_server_token" type="password">
+
+    <button onclick="createPlexServer()">Add Plex Server</button>
+    <button onclick="saveUnmanicSettings()" style="margin-left:8px">Save Monitor Settings</button>
+
+    <div class="desc" style="margin-top:10px">This monitors server sessions with one Plex server token and does not require Plex Pass or per-user webhooks.</div>
+    <div id="plexServers" style="margin-top:12px"></div>
+    <div id="plexMonitorStatus" style="margin-top:12px"></div>
   </div>
 
   <div class="card">
@@ -249,6 +279,8 @@ async function init(){
   unmanic_password.value=s.unmanic_password
   startup_delay.value=s.startup_delay
   auto_start_timer.checked=s.auto_start_timer
+  plex_monitor_enabled.checked=!!s.plex_monitor_enabled
+  plex_poll_interval.value=s.plex_poll_interval||10
   ui_username.value=s.ui_username
   currentUIPassword=s.ui_password
   webhookPort=s.webhook_port||'9777'
@@ -256,6 +288,8 @@ async function init(){
   loadWorkers()
   loadLogs()
   loadWebhookKeys()
+  loadPlexServers()
+  loadPlexMonitorStatus()
   updateTimer()
 }
 
@@ -350,6 +384,92 @@ async function deleteWebhookKey(key){
   loadWebhookKeys()
 }
 
+function renderPlexServers(servers){
+  plexServers.innerHTML=''
+  if(!servers.length){
+    plexServers.innerHTML='<i>No Plex servers added</i>'
+    return
+  }
+
+  servers.forEach(s=>{
+    const row=document.createElement('div')
+    row.className='keyRow'
+
+    const title=document.createElement('b')
+    title.textContent=s.name
+    row.appendChild(title)
+
+    const url=document.createElement('div')
+    url.className='keyUrl'
+    url.textContent=s.url
+    row.appendChild(url)
+
+    const state=document.createElement('div')
+    state.className='desc'
+    state.textContent=s.enabled?'Enabled':'Disabled'
+    row.appendChild(state)
+
+    const del=document.createElement('button')
+    del.textContent='Delete'
+    del.onclick=()=>deletePlexServer(s.id)
+    row.appendChild(del)
+
+    plexServers.appendChild(row)
+  })
+}
+
+async function loadPlexServers(){
+  const servers=await apiFetch('/api/plex-servers').then(r=>r.json())
+  renderPlexServers(servers)
+}
+
+async function createPlexServer(){
+  const name=plex_server_name.value.trim()
+  const url=plex_server_url.value.trim()
+  const token=plex_server_token.value.trim()
+  if(!name||!url||!token){
+    toast('error','Enter Plex name, URL, and token')
+    return
+  }
+  await apiFetch('/api/plex-servers',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,url,token,enabled:true})
+  })
+  plex_server_name.value=''
+  plex_server_url.value=''
+  plex_server_token.value=''
+  toast('success','Plex server added')
+  loadPlexServers()
+  loadPlexMonitorStatus()
+}
+
+async function deletePlexServer(id){
+  await apiFetch('/api/plex-servers/'+encodeURIComponent(id),{method:'DELETE'})
+  toast('success','Plex server deleted')
+  loadPlexServers()
+  loadPlexMonitorStatus()
+}
+
+function renderPlexMonitorStatus(s){
+  const active=s.active?'Active playback detected':'No active playback'
+  const rows=(s.servers||[]).map(x=>{
+    if(!x.ok) return `<div class="statusLine"><b>${x.name}</b>: ERROR ${x.error}</div>`
+    return `<div class="statusLine"><b>${x.name}</b>: ${x.playing} playing, ${x.paused} paused, ${x.total} total</div>`
+  }).join('')
+  plexMonitorStatus.innerHTML=`
+    <div class="statusLine"><b>Monitor:</b> ${s.enabled?'Enabled':'Disabled'}</div>
+    <div class="statusLine"><b>Status:</b> ${active}</div>
+    <div class="statusLine"><b>Last check:</b> ${s.last_check||'Never'}</div>
+    ${rows||'<div class="statusLine">No enabled Plex servers with tokens configured</div>'}
+  `
+}
+
+async function loadPlexMonitorStatus(){
+  const status=await apiFetch('/api/plex-monitor/status').then(r=>r.json())
+  renderPlexMonitorStatus(status)
+}
+
 async function saveUnmanicSettings(){
   await apiFetch('/api/settings',{
     method:'POST',
@@ -359,10 +479,13 @@ async function saveUnmanicSettings(){
       unmanic_username:unmanic_username.value,
       unmanic_password:unmanic_password.value,
       startup_delay:+startup_delay.value,
-      auto_start_timer:auto_start_timer.checked
+      auto_start_timer:auto_start_timer.checked,
+      plex_monitor_enabled:plex_monitor_enabled.checked,
+      plex_poll_interval:+plex_poll_interval.value
     })
   })
   toast('success','Settings saved')
+  loadPlexMonitorStatus()
 }
 
 async function saveUIPassword(){
@@ -425,6 +548,7 @@ async function updateTimer(){
 
 setInterval(()=>authenticated&&loadLogs(),5000)
 setInterval(()=>authenticated&&loadWorkers(),60000)
+setInterval(()=>authenticated&&loadPlexMonitorStatus(),10000)
 setInterval(()=>authenticated&&updateTimer(),1000)
 checkSession()
 </script>
