@@ -65,7 +65,7 @@ Add these lines to `.env`:
 
 ```env
 UNRAID_DOCKER_NETWORK=br2
-UNMANIC_CONTROLLER_IP=192.168.6.91
+UNMANIC_CONTROLLER_IP=xxx.xxx.xxx.xxx
 ```
 
 Start with both compose files:
